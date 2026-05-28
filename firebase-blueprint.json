@@ -1,0 +1,112 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and system settings",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The unique authenticated user ID matching request.auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the authenticated user"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user account was provisioned"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when user profile was last updated"
+        }
+      },
+      "required": [
+        "userId",
+        "email",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Screenshot": {
+      "title": "Screenshot Metadata",
+      "description": "Metadata for an uploaded and processed screenshot",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the screenshot matchable with document ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owner"
+        },
+        "url": {
+          "type": "string",
+          "description": "Public URL of the uploaded physical image file"
+        },
+        "text": {
+          "type": "string",
+          "description": "AI extracted OCR textual content"
+        },
+        "tags": {
+          "type": "array",
+          "description": "AI tagged categorization markers"
+        },
+        "category": {
+          "type": "string",
+          "description": "Primary visual content category (e.g., Code, Dashboard, Social)"
+        },
+        "summary": {
+          "type": "string",
+          "description": "AI-generated semantic summarization of the screenshot"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "processing",
+            "completed",
+            "error"
+          ],
+          "description": "The current OCR sync lifecycle status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last edit timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "url",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of unique registered user profiles"
+    },
+    "users/{userId}/screenshots/{screenshotId}": {
+      "schema": "Screenshot",
+      "description": "Screenshots collection grouped nested under the parent owner's profile"
+    }
+  }
+}

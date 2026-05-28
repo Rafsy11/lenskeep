@@ -1,0 +1,8 @@
+{
+  "name": "Remix: LensKeep",
+  "description": "Screenshot library with AI-powered OCR, categorization, and search.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // User document validation
+    function isValidUser(data, userId) {
+      return data.userId == userId
+        && data.email is string
+        && data.email.size() <= 256
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Screenshot document validation
+    function isValidScreenshot(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.userId == userId
+        && data.url is string
+        && data.url.size() <= 1024
+        && data.status is string
+        && (data.status == 'pending' || data.status == 'processing' || data.status == 'completed' || data.status == 'error')
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Match paths for Users collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(request.resource.data, userId);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(request.resource.data, userId);
+    }
+
+    // Match paths for Usernames collection
+    match /usernames/{usernameId} {
+      allow get: if true; // anyone can check if a username exists
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid && usernameId.matches('^[a-z0-9_]+$');
+    }
+
+    // Match nested paths for Screenshots
+    match /users/{userId}/screenshots/{screenshotId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(screenshotId) && isValidScreenshot(request.resource.data, userId);
+      allow update: if isOwner(userId) && isValidId(screenshotId) && isValidScreenshot(request.resource.data, userId);
+      allow delete: if isOwner(userId);
+    }
+  }
+}

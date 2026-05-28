@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #f8fafc; /* slate-50 */
+    --bg-secondary: #ffffff; /* white */
+    --bg-tertiary: #f1f5f9; /* slate-100 */
+    
+    --border-light: rgba(226, 232, 240, 0.8); /* border-slate-200/80 */
+    --border-lighter: rgba(226, 232, 240, 0.5); /* border-slate-150 / border-slate-200/50 */
+    
+    --text-primary: #0f172a; /* slate-900 */
+    --text-secondary: #1e293b; /* slate-800 & slate-700 */
+    --text-muted: #64748b; /* slate-500 & slate-600 */
+    --text-muted-lighter: #94a3b8; /* slate-400 */
+  }
+
+  .dark {
+    --bg-primary: #070a13; /* deep space backdrop */
+    --bg-secondary: #0d1424; /* primary dark container back */
+    --bg-tertiary: #162035; /* inner workspace background / cards hover */
+    
+    --border-light: rgba(30, 41, 59, 0.8); /* matching dark slate border */
+    --border-lighter: rgba(30, 41, 59, 0.4); /* faint dark border */
+    
+    --text-primary: #f8fafc; /* crisp white text */
+    --text-secondary: #cbd5e1; /* soft grey elements */
+    --text-muted: #94a3b8; /* slate-400 */
+    --text-muted-lighter: #64748b; /* slate-500 */
+    
+    color-scheme: dark;
+  }
+
+  /* Butttery smooth theme transitons */
+  html, body, header, section, main, div, input, select, button, textarea, span, p, h1, h2, h3, h4, h5, h6 {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-duration: 220ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  html, body {
+    overflow-y: overlay;
+  }
+  /* Custom Scrollbar Styles */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    border: none;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(203, 213, 225, 0.8);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.8);
+  }
+
+  .dark ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background-color: #1e293b; /* slate-800 */
+    border-radius: 9999px;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background-color: #334155; /* slate-700 */
+  }
+
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(203, 213, 225, 0.8) transparent;
+  }
+
+  html.dark, .dark {
+    scrollbar-color: #1e293b transparent;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+  }
+  .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+  }
+}
+
+/* Explicit class-based overrides for clean and side-effect-free Dark Mode theme coverage */
+.dark body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-secondary) !important;
+}
+
+.dark .bg-slate-50 {
+  background-color: var(--bg-primary) !important;
+}
+
+.dark .bg-slate-50\/50 {
+  background-color: rgba(7, 10, 19, 0.5) !important;
+}
+
+.dark .bg-white {
+  background-color: var(--bg-secondary) !important;
+}
+
+.dark .bg-white\/85 {
+  background-color: rgba(13, 20, 36, 0.85) !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.dark .hover\:bg-slate-50:hover {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.dark .hover\:bg-slate-100\/50:hover {
+  background-color: rgba(22, 32, 53, 0.5) !important;
+}
+
+.dark .hover\:bg-slate-100:hover {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.dark .border-slate-200 {
+  border-color: var(--border-light) !important;
+}
+
+.dark .border-slate-150 {
+  border-color: var(--border-lighter) !important;
+}
+
+.dark .border-slate-205 {
+  border-color: var(--border-light) !important;
+}
+
+.dark .border-slate-200\/80 {
+  border-color: var(--border-light) !important;
+}
+
+.dark .border-slate-200\/60 {
+  border-color: var(--border-light) !important;
+}
+
+.dark .border-slate-200\/50 {
+  border-color: var(--border-lighter) !important;
+}
+
+.dark .border-slate-200\/40 {
+  border-color: var(--border-lighter) !important;
+}
+
+.dark .text-slate-900 {
+  color: var(--text-primary) !important;
+}
+
+.dark .text-slate-800 {
+  color: var(--text-secondary) !important;
+}
+
+.dark .text-slate-700 {
+  color: var(--text-secondary) !important;
+}
+
+.dark .text-slate-750 {
+  color: var(--text-secondary) !important;
+}
+
+.dark .text-slate-600 {
+  color: var(--text-muted) !important;
+}
+
+.dark .text-slate-650 {
+  color: var(--text-muted) !important;
+}
+
+.dark .text-slate-500 {
+  color: var(--text-muted) !important;
+}
+
+.dark .text-slate-400 {
+  color: var(--text-muted-lighter) !important;
+}
+
+/* Ensure placeholder text, active inputs etc adapt beautifully to Dark Mode */
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-muted-lighter) !important;
+  opacity: 0.8;
+}
+
+.dark select {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-secondary) !important;
+}
+
+.dark option {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark input, 
+.dark textarea {
+  color: var(--text-primary) !important;
+}

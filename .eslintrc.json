@@ -1,0 +1,9 @@
+{
+  "extends": "eslint:recommended",
+  "ignorePatterns": ["**/*"],
+  "rules": {
+    "no-unused-vars": "off",
+    "no-undef": "off",
+    "no-constant-condition": "off"
+  }
+}
