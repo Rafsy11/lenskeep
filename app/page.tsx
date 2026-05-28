@@ -34,7 +34,8 @@ import {
   Menu,
   LayoutGrid,
   List,
-  ArrowUp
+  ArrowUp,
+  BookOpen
 } from 'lucide-react';
 
 import { useAuth } from '@/lib/AuthContext';
@@ -329,6 +330,99 @@ function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScr
   );
 }
 
+function GuideModal({ show, onClose }: { show: boolean; onClose: () => void }) {
+  if (!show) return null;
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+      >
+        <motion.div
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 50, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]"
+        >
+          <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+            <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center space-x-2">
+              <BookOpen className="w-5 h-5 text-indigo-500" />
+              <span>Panduan Penggunaan</span>
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="p-6 overflow-y-auto space-y-8 flex-1">
+            <div className="space-y-4">
+              <div className="flex items-start space-x-4">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shrink-0">
+                  1
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">Pengaturan API Key</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Sebelum memindai gambar, Anda perlu memasukkan Google Gemini API Key. Klik ikon kunci di pojok kanan atas. <strong className="text-slate-700 dark:text-slate-300">API Key disimpan secara lokal di perangkat Anda</strong> (menggunakan LocalStorage) dan dikirim langsung ke server Google. Kami tidak menyimpan kunci Anda di database.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-4">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shrink-0">
+                  2
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">Proses Unggah</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Tarik dan lepas gambar, atau pilih folder. Aplikasi menggunakan <strong>sistem antrean dua fase</strong>:
+                    <br />
+                    Fase 1: Gambar diunggah ke penyimpanan cloud secara cepat.
+                    <br />
+                    Fase 2: Pekerja latar belakang (Background Worker) memproses gambar yang tertunda dengan AI satu per satu agar antarmuka tidak membeku.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-4">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shrink-0">
+                  3
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-1">Pencarian Pintar</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Setelah AI merangkum teks dari tangkapan layar, Anda dapat mencari detail spesifik! Gunakan bilah pencarian besar di atas untuk mencari teks yang terekstrak dari dalam gambar, ringkasan, atau tag.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl border border-indigo-100 dark:border-indigo-500/20">
+              <p className="text-sm text-indigo-800 dark:text-indigo-300">
+                <strong>Tips:</strong> Anda juga dapat menyesuaikan instruksi AI (Custom Prompt) di menu pengaturan API Key agar hasil ringkasan lebih sesuai dengan kebutuhan pekerjaan Anda.
+              </p>
+            </div>
+          </div>
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0">
+            <button
+               onClick={onClose}
+               className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-xl transition-all cursor-pointer"
+            >
+              Mengerti
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 function ApiKeyModal({ show, onClose, apiKeys, setApiKeys, customPrompt, setCustomPrompt, t, userId }: any) {
   if (!show) return null;
   return (
@@ -559,6 +653,7 @@ export default function Home() {
   const [showConfirmClearAll, setShowConfirmClearAll] = useState<boolean>(false);
   const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState<boolean>(false);
+  const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [apiKeys, setApiKeys] = useState<string[]>(['']);
   const [customPrompt, setCustomPrompt] = useState<string>('');
@@ -1035,7 +1130,7 @@ export default function Home() {
       name: file.name,
       size: file.size,
       status: 'pending',
-      progressText: 'In queue...',
+      progressText: 'Queuing for upload...',
     }));
 
     setUploadQueue(initialQueue);
@@ -1045,13 +1140,10 @@ export default function Home() {
       errors: 0,
     });
 
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const queueId = initialQueue[i].id;
-
+    const uploadPromises = files.map(async (file, idx) => {
+      const queueId = initialQueue[idx].id;
       let fileToUpload = file;
+      
       try {
         setUploadQueue(prev =>
           prev.map(item =>
@@ -1072,12 +1164,12 @@ export default function Home() {
         setUploadQueue(prev =>
           prev.map(item =>
             item.id === queueId
-              ? { ...item, status: 'error', progressText: 'Invalid or corrupt image format.' }
+              ? { ...item, status: 'error', progressText: 'Invalid image format.' }
               : item
           )
         );
         setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
-        continue;
+        return;
       }
 
       setUploadQueue(prev =>
@@ -1091,35 +1183,10 @@ export default function Home() {
       try {
         if (!user) throw new Error("User not authenticated.");
 
-        // Upload to Firebase Storage
-        const uuid = Date.now().toString() + '-' + Math.round(Math.random() * 1000);
+        const uuid = Date.now().toString() + '-' + Math.round(Math.random() * 1000) + '-' + idx;
         const storageRef = ref(storage, `users/${user.uid}/images/${uuid}.webp`);
         await uploadBytes(storageRef, fileToUpload);
         const persistentUrl = await getDownloadURL(storageRef);
-
-        setUploadQueue(prev =>
-          prev.map(item =>
-            item.id === queueId
-              ? { ...item, status: 'uploading', progressText: 'Analyzing with Gemini...' }
-              : item
-          )
-        );
-
-        let ocrResult = { extractedText: '', tags: [], category: 'Other', summary: '' };
-        let finalStatus = 'completed';
-
-        try {
-          const { res, data } = await executeWithKeyRotationAndRetry(persistentUrl, selectedModel);
-          if (res.ok && data.success) {
-            ocrResult = data.result || {};
-          } else {
-             console.warn("Gemini analysis failed:", data);
-             finalStatus = 'error';
-          }
-        } catch (e) {
-          console.warn("Gemini request threw error:", e);
-          finalStatus = 'error';
-        }
 
         setUploadQueue(prev =>
           prev.map(item =>
@@ -1129,17 +1196,17 @@ export default function Home() {
           )
         );
 
-        // Write metadata document immediately into user's nested Firestore screenshots subcollection
+        // Phase 1: Only save as pending. The background worker will process it.
         await setDoc(doc(db, 'users', user.uid, 'screenshots', uuid), {
           id: uuid,
           userId: user.uid,
           url: persistentUrl,
           imageUrl: persistentUrl,
-          status: finalStatus,
-          text: ocrResult.extractedText || '',
-          tags: ocrResult.tags || [],
-          category: ocrResult.category || 'Other',
-          summary: ocrResult.summary || '',
+          status: 'pending',
+          text: '',
+          tags: [],
+          category: 'Other',
+          summary: '',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1147,44 +1214,41 @@ export default function Home() {
         setUploadQueue(prev =>
           prev.map(item =>
             item.id === queueId
-              ? { ...item, status: finalStatus === 'completed' ? 'completed' : 'error', progressText: finalStatus === 'completed' ? 'Saved successfully!' : 'Analysis failed, but saved.' }
+              ? { ...item, status: 'completed', progressText: 'Uploaded & Pending Analysis' }
               : item
           )
         );
-        
-        if (finalStatus === 'completed') {
-          setQueueSummary(prev => ({ ...prev, completed: prev.completed + 1 }));
-        } else {
-          setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
-        }
+        setQueueSummary(prev => ({ ...prev, completed: prev.completed + 1 }));
       } catch (err) {
         console.error('File upload failed:', err);
         setUploadQueue(prev =>
           prev.map(item =>
             item.id === queueId
-              ? { ...item, status: 'error', progressText: 'Database save failed.' }
+              ? { ...item, status: 'error', progressText: 'Upload or DB save failed.' }
               : item
           )
         );
         setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
       }
+    });
 
-      if (i < files.length - 1) {
-        await sleep(3000);
-      }
-    }
+    await Promise.all(uploadPromises);
 
     setUploading(false);
+    // Refresh list so the background worker sees new pending docs
     await fetchScreenshots();
   };
 
-  // Sync Library - processes all pending/error screenshots sequentially with Gemini API
-  const syncLibrary = async () => {
+  const syncLibrary = async (isAuto = false) => {
     if (!checkApiKeyGuard()) return;
 
-    const pendingScreenshots = screenshots.filter(s => s.status === 'pending' || s.status === 'error');
+    // Filter pending docs. For manual, also retry errors.
+    const pendingScreenshots = screenshots.filter(s => 
+      s.status === 'pending' || (!isAuto && s.status === 'error')
+    );
+
     if (pendingScreenshots.length === 0) {
-      alert('Folders are fully synchronized! All screenshots are analyzed.');
+      if (!isAuto) alert('Folders are fully synchronized! All screenshots are analyzed.');
       return;
     }
 
@@ -1256,7 +1320,7 @@ export default function Home() {
 
           const errText = String(data.error || '').toLowerCase();
           if (errText.includes('quota') || errText.includes('exhausted') || errText.includes('429')) {
-            alert('Batch synchronization paused: Gemini API daily quota or rate limit exceeded across all available keys.');
+            if (!isAuto) alert('Batch synchronization paused: Gemini API daily quota or rate limit exceeded across all available keys.');
             break;
           }
         }
@@ -1279,6 +1343,17 @@ export default function Home() {
 
     await fetchScreenshots();
   };
+
+  // Background AI Worker - Phase 2 Loop
+  useEffect(() => {
+    if (!user || syncStatus.isSyncing) return;
+    
+    // Check if there are any strictly 'pending' items waiting
+    const hasPending = screenshots.some(s => s.status === 'pending');
+    if (hasPending) {
+      syncLibrary(true);
+    }
+  }, [screenshots, user, syncStatus.isSyncing]);
 
   // Run manual analysis on a single screenshot using Firestore
   const runManualAnalysis = async (id: string) => {
@@ -1541,6 +1616,15 @@ export default function Home() {
             <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest">{language}</span>
           </button>
 
+          <button
+            onClick={() => setIsGuideOpen(true)}
+            className="hidden md:flex items-center space-x-2 px-3 py-2 md:py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:text-indigo-400 transition-all cursor-pointer border border-indigo-200/50 dark:border-indigo-500/20 shadow-sm shrink-0"
+            title="Panduan Penggunaan"
+          >
+            <BookOpen className="w-4 h-4" />
+            <span className="text-xs font-bold hidden lg:inline">Panduan</span>
+          </button>
+
           {/* Settings / API Key Button */}
           <button
             onClick={() => setShowApiKeyModal(true)}
@@ -1655,6 +1739,14 @@ export default function Home() {
                 <span className="text-sm font-semibold">{darkMode ? t('header.switch_light') : t('header.switch_dark')}</span>
               </button>
 
+              <button
+                onClick={() => { setIsGuideOpen(true); setIsMobileMenuOpen(false); }}
+                className="flex items-center space-x-3 w-full text-left text-slate-700 dark:text-slate-200"
+              >
+                <BookOpen className="w-5 h-5 flex-shrink-0" />
+                <span className="text-sm font-semibold">Panduan Penggunaan</span>
+              </button>
+
               {user && (
                 <>
                   <div className="h-px w-full bg-slate-200 dark:bg-slate-800 my-1" />
@@ -1682,6 +1774,8 @@ export default function Home() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 flex flex-col space-y-6 md:space-y-8" id="app-main-workspace">
         
+        <GuideModal show={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+
         {/* API Key Modal */}
         <ApiKeyModal 
           show={showApiKeyModal} 
@@ -2123,7 +2217,7 @@ export default function Home() {
                 ).length;
                 return (
                   <button
-                    onClick={syncLibrary}
+                    onClick={() => syncLibrary(false)}
                     disabled={syncStatus.isSyncing}
                     title="Synchronize all screenshots [Ctrl+S]"
                     className={`flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold rounded-lg border transition-all active:scale-95 cursor-pointer shadow-sm ${
