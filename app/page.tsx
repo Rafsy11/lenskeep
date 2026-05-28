@@ -40,7 +40,13 @@ import {
 import { useAuth } from '@/lib/AuthContext';
 import { useLanguage } from '@/lib/LanguageContext';
 import type { Language } from '@/lib/i18n';
-import { db, auth } from '@/lib/firebase';
+import { db, auth, storage } from '@/lib/firebase';
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from 'firebase/storage';
 import {
   collection,
   doc,
@@ -103,6 +109,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 interface Screenshot {
   id: string;
   url: string;
+  imageUrl?: string;
   text?: string;
   tags: string[];
   category?: string;
@@ -147,7 +154,7 @@ const LibraryCard = memo(function LibraryCard({ s, onClick, isSelected, onToggle
         <div className="relative w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden shrink-0">
           {!loaded && <div className="absolute inset-0 animate-pulse bg-slate-200 dark:bg-slate-800 z-0" />}
           <img
-            src={s.url}
+            src={s.imageUrl || s.url}
             alt={s.summary || 'Screenshot'}
             onLoad={() => setLoaded(true)}
             className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
@@ -204,7 +211,7 @@ const LibraryCard = memo(function LibraryCard({ s, onClick, isSelected, onToggle
 
       {!loaded && <div className="absolute inset-0 animate-pulse bg-slate-800 z-0" />}
       <img
-        src={s.url}
+        src={s.imageUrl || s.url}
         alt={s.summary || 'Screenshot'}
         onLoad={() => setLoaded(true)}
         className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ease-in-out relative z-10 ${loaded ? 'opacity-100' : 'opacity-0'}`}
@@ -697,6 +704,7 @@ export default function Home() {
           list.push({
             id: docSnap.id,
             url: data.url,
+            imageUrl: data.imageUrl || data.url,
             text: data.text || '',
             tags: data.tags || [],
             category: data.category || 'Other',
@@ -771,7 +779,12 @@ export default function Home() {
         const target = screenshots.find(s => s.id === id);
         if (target) {
           try {
-            await fetch(`/api/screenshots?url=${encodeURIComponent(target.url)}`, { method: 'DELETE' });
+            const fileUrl = target.imageUrl || target.url;
+            if (fileUrl.includes('firebasestorage.googleapis.com')) {
+              await deleteObject(ref(storage, fileUrl));
+            } else {
+              await fetch(`/api/screenshots?url=${encodeURIComponent(target.url)}`, { method: 'DELETE' });
+            }
           } catch (e) {
             console.error('Failed to unlink bulk item', e);
           }
@@ -1064,54 +1077,79 @@ export default function Home() {
       setUploadQueue(prev =>
         prev.map(item =>
           item.id === queueId
-            ? { ...item, status: 'uploading', progressText: 'Saving in database...' }
+            ? { ...item, status: 'uploading', progressText: 'Uploading to Firebase...' }
             : item
         )
       );
 
       try {
-        const formData = new FormData();
-        formData.append('file', fileToUpload);
+        if (!user) throw new Error("User not authenticated.");
 
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        // Upload to Firebase Storage
+        const uuid = Date.now().toString() + '-' + Math.round(Math.random() * 1000);
+        const storageRef = ref(storage, `users/${user.uid}/images/${uuid}.webp`);
+        await uploadBytes(storageRef, fileToUpload);
+        const persistentUrl = await getDownloadURL(storageRef);
+
+        setUploadQueue(prev =>
+          prev.map(item =>
+            item.id === queueId
+              ? { ...item, status: 'uploading', progressText: 'Analyzing with Gemini...' }
+              : item
+          )
+        );
+
+        let ocrResult = { extractedText: '', tags: [], category: 'Other', summary: '' };
+        let finalStatus = 'completed';
+
+        try {
+          const { res, data } = await executeWithKeyRotationAndRetry(persistentUrl, selectedModel);
+          if (res.ok && data.success) {
+            ocrResult = data.result || {};
+          } else {
+             console.error("Gemini analysis failed:", data);
+             finalStatus = 'error';
+          }
+        } catch (e) {
+          console.error("Gemini request threw error:", e);
+          finalStatus = 'error';
+        }
+
+        setUploadQueue(prev =>
+          prev.map(item =>
+            item.id === queueId
+              ? { ...item, status: 'uploading', progressText: 'Saving in database...' }
+              : item
+          )
+        );
+
+        // Write metadata document immediately into user's nested Firestore screenshots subcollection
+        await setDoc(doc(db, 'users', user.uid, 'screenshots', uuid), {
+          id: uuid,
+          userId: user.uid,
+          url: persistentUrl,
+          imageUrl: persistentUrl,
+          status: finalStatus,
+          text: ocrResult.extractedText || '',
+          tags: ocrResult.tags || [],
+          category: ocrResult.category || 'Other',
+          summary: ocrResult.summary || '',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
 
-        const data = await response.json();
-
-        if (response.ok && data.success && user) {
-          // Write metadata document immediately into user's nested Firestore screenshots subcollection
-          const screenshotId = Date.now().toString() + '-' + Math.round(Math.random() * 1000);
-          await setDoc(doc(db, 'users', user.uid, 'screenshots', screenshotId), {
-            id: screenshotId,
-            userId: user.uid,
-            url: data.url,
-            status: 'pending',
-            tags: [],
-            category: 'Other',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-
-          setUploadQueue(prev =>
-            prev.map(item =>
-              item.id === queueId
-                ? { ...item, status: 'completed', progressText: 'Saved successfully!' }
-                : item
-            )
-          );
+        setUploadQueue(prev =>
+          prev.map(item =>
+            item.id === queueId
+              ? { ...item, status: finalStatus === 'completed' ? 'completed' : 'error', progressText: finalStatus === 'completed' ? 'Saved successfully!' : 'Analysis failed, but saved.' }
+              : item
+          )
+        );
+        
+        if (finalStatus === 'completed') {
           setQueueSummary(prev => ({ ...prev, completed: prev.completed + 1 }));
         } else {
-          setUploadQueue(prev =>
-            prev.map(item =>
-              item.id === queueId
-                ? { ...item, status: 'error', progressText: data.error || 'Failed to save' }
-                : item
-            )
-          );
           setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
-          await fetchScreenshots();
         }
       } catch (err) {
         console.error('File upload failed:', err);
@@ -1307,10 +1345,12 @@ export default function Home() {
     if (!targetScreenshot) return;
 
     try {
-      // 1. Unlink physical image file on server
-      await fetch(`/api/screenshots?url=${encodeURIComponent(targetScreenshot.url)}`, {
-        method: 'DELETE',
-      });
+      const fileUrl = targetScreenshot.imageUrl || targetScreenshot.url;
+      if (fileUrl.includes('firebasestorage.googleapis.com')) {
+        await deleteObject(ref(storage, fileUrl));
+      } else {
+        await fetch(`/api/screenshots?url=${encodeURIComponent(targetScreenshot.url)}`, { method: 'DELETE' });
+      }
 
       // 2. Delete document in Firestore
       await deleteDoc(doc(db, 'users', user.uid, 'screenshots', id));
@@ -1328,7 +1368,13 @@ export default function Home() {
     if (!user) return;
     setIsClearingAll(true);
     try {
-      // 1. Unlink all physical image files on server
+      for (const s of screenshots) {
+        const fileUrl = s.imageUrl || s.url;
+        if (fileUrl && fileUrl.includes('firebasestorage.googleapis.com')) {
+          try { await deleteObject(ref(storage, fileUrl)); } catch(e) {}
+        }
+      }
+      // 1. Unlink all physical image files on server (Legacy)
       await fetch('/api/screenshots?all=true', {
         method: 'DELETE',
       });
@@ -2253,7 +2299,7 @@ export default function Home() {
               {/* Left Side: Dynamic Image Viewer */}
               <div className="flex-1 bg-slate-950/40 flex items-center justify-center p-4 relative min-h-0">
                 <img
-                  src={selectedScreenshot.url}
+                  src={selectedScreenshot.imageUrl || selectedScreenshot.url}
                   alt={selectedScreenshot.summary || 'Full view'}
                   className="max-w-full max-h-full object-contain rounded-lg"
                   referrerPolicy="no-referrer"
