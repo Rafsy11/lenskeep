@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { getFirestore, doc, setDoc } from 'firebase/firestore/lite';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore/lite';
 import { app } from '@/lib/firebase';
 import firebaseConfig from '@/firebase-applet-config.json';
 
@@ -15,17 +15,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email and UID are required' }, { status: 400 });
     }
 
+    const dbLite = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
+    const otpDocRef = doc(dbLite, 'otp_codes', uid);
+
+    // Rate Limiting (60-second cooldown)
+    const otpSnapshot = await getDoc(otpDocRef);
+    if (otpSnapshot.exists()) {
+      const data = otpSnapshot.data();
+      if (data.lastSentAt) {
+        const timeElapsed = Date.now() - data.lastSentAt;
+        if (timeElapsed < 60000) {
+          return NextResponse.json(
+            { error: 'Harap tunggu 60 detik sebelum mengirim ulang kode.' },
+            { status: 429 }
+          );
+        }
+      }
+    }
+
     // Generate secure random 6-digit numeric OTP code
     const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Save this OTP code under a temporary collection 'otp_codes/{uid}'
-    const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-    const otpDocRef = doc(dbLite, 'otp_codes', uid);
     await setDoc(otpDocRef, {
       code: generatedOtp,
       email: email,
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes expiration
+      lastSentAt: Date.now(),
     });
 
     console.log(`\n\n=== OTP GENERATED ===\nUID: ${uid}\nEmail: ${email}\nOTP: ${generatedOtp}\n=====================\n\n`);
