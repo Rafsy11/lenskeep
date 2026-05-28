@@ -134,19 +134,20 @@ function getRetryDelay(error: any): number {
 }
 
 export async function processScreenshotWithAI(base64Image: string, mimeType: string, model: string = "gemini-3.5-flash", language: string = "id", customApiKey?: string, customPrompt?: string): Promise<GeminiAnalysisResult> {
-  const resolvedApiKey = customApiKey || process.env.GEMINI_API_KEY;
-  if (!resolvedApiKey) {
+  const allKeys = [
+    customApiKey,
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEY
+  ].filter(Boolean) as string[];
+
+  // Remove duplicate keys to prevent redundant retries
+  const availableKeys = Array.from(new Set(allKeys));
+
+  if (availableKeys.length === 0) {
     throw new Error('API_KEY_MISSING: Gemini API Key is missing. Please provide one in the settings.');
   }
-
-  const ai = new GoogleGenAI({
-    apiKey: resolvedApiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
 
   const imagePart = {
     inlineData: {
@@ -165,90 +166,115 @@ export async function processScreenshotWithAI(base64Image: string, mimeType: str
 
   const systemInstruction = "You are LensKeep, an advanced OCR and Visual Analysis Engine. Your primary job is to extract text with perfect accuracy and provide an insightful, concise context about the image. CRITICAL: You must strictly use the language provided by the user in the prompt (id or en).";
 
-  const maxAttempts = 5;
-  let attempt = 0;
+  let lastError: any = null;
 
-  while (attempt < maxAttempts) {
-    attempt++;
-    await acquireToken();
-
-    try {
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: [imagePart, promptPart],
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              extractedText: {
-                type: Type.STRING,
-                description: "string (the exact raw text found in the image. If no text, return an empty string)",
-              },
-              summary: {
-                type: Type.STRING,
-                description: "string (a concise 2-3 sentence description of the visual context)",
-              },
-              tags: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: "Generate exactly 3 to 5 relevant lowercase tags, e.g., 'meme', 'receipt', 'code'",
-              },
-            },
-            required: ["extractedText", "summary", "tags"],
-          },
+  for (let keyIndex = 0; keyIndex < availableKeys.length; keyIndex++) {
+    const currentKey = availableKeys[keyIndex];
+    const ai = new GoogleGenAI({
+      apiKey: currentKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
         },
-      });
+      },
+    });
 
-      const textResponse = response.text;
-      if (!textResponse) {
-        throw new Error("No response text received from Gemini.");
-      }
+    const maxAttemptsPerKey = 3;
+    let attempt = 0;
 
-      const data = JSON.parse(textResponse.trim()) as GeminiAnalysisResult;
-      return data;
-    } catch (error: any) {
-      console.error(`[Gemini Throttler] Request attempt ${attempt}/${maxAttempts} failed:`, error);
-      
-      const errMsg = String(error.message || error);
-      
-      // Abort retry logic early if the API key is completely invalid or unauthorized to prevent 5 extra attempts
-      if (
-        errMsg.toLowerCase().includes('403') || 
-        errMsg.toLowerCase().includes('401') || 
-        errMsg.toLowerCase().includes('api_key_invalid') ||
-        errMsg.toLowerCase().includes('not a valid api key')
-      ) {
-        throw new Error('API_KEY_INVALID: Your Gemini API Key is invalid or unauthorized.');
-      }
+    while (attempt < maxAttemptsPerKey) {
+      attempt++;
+      await acquireToken();
 
-      if (isDailyQuotaExhaustedError(error)) {
-        throw new Error(`GEMINI_QUOTA_EXHAUSTED: You exceeded your daily free tier limit for model '${model}'. Please activate a paid API key or switch to a different model in the settings.`);
-      }
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: [imagePart, promptPart],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                extractedText: {
+                  type: Type.STRING,
+                  description: "string (the exact raw text found in the image. If no text, return an empty string)",
+                },
+                summary: {
+                  type: Type.STRING,
+                  description: "string (a concise 2-3 sentence description of the visual context)",
+                },
+                tags: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Generate exactly 3 to 5 relevant lowercase tags, e.g., 'meme', 'receipt', 'code'",
+                },
+              },
+              required: ["extractedText", "summary", "tags"],
+            },
+          },
+        });
 
-      const isRateLimit = isRateLimitError(error);
-      const isTransient = error?.status === 500 || error?.status === 503 || String(error).includes('503') || String(error).includes('500');
-
-      if (isRateLimit) {
-        // Enforce quota exceeded feedback immediately if it's candidate for failure 
-        if (attempt >= maxAttempts) {
-          throw new Error(`GEMINI_QUOTA_EXHAUSTED: You exceeded your quota for model '${model}'. Please activate a paid API key or switch to a different model in the settings.`);
+        const textResponse = response.text;
+        if (!textResponse) {
+          throw new Error("No response text received from Gemini.");
         }
-        const baseDelay = getRetryDelay(error);
-        const backoffDelay = Math.ceil(baseDelay * Math.pow(1.3, attempt - 1) + Math.random() * 3000);
-        console.warn(`[Gemini Retry] Throttled error hit. Queueing automatic retry ${attempt + 1}/${maxAttempts} in ${Math.round(backoffDelay / 1000)} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      } else if (isTransient && attempt < maxAttempts) {
-        const baseDelay = 3000;
-        const backoffDelay = Math.ceil(baseDelay * Math.pow(1.5, attempt - 1) + Math.random() * 1000);
-        console.warn(`[Gemini Retry] Transient error hit. Queueing automatic retry ${attempt + 1}/${maxAttempts} in ${Math.round(backoffDelay / 1000)} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      } else {
-        throw error;
+
+        const data = JSON.parse(textResponse.trim()) as GeminiAnalysisResult;
+        return data;
+      } catch (error: any) {
+        lastError = error;
+        console.error(`[Gemini Throttler] Request attempt ${attempt}/${maxAttemptsPerKey} with key index ${keyIndex} failed:`, error);
+        
+        const errMsg = String(error.message || error);
+        
+        if (
+          errMsg.toLowerCase().includes('403') || 
+          errMsg.toLowerCase().includes('401') || 
+          errMsg.toLowerCase().includes('api_key_invalid') ||
+          errMsg.toLowerCase().includes('not a valid api key')
+        ) {
+          throw new Error('API_KEY_INVALID: Your Gemini API Key is invalid or unauthorized.');
+        }
+
+        const isDailyQuotaExhausted = isDailyQuotaExhaustedError(error);
+        const isRateLimit = isRateLimitError(error) || isDailyQuotaExhausted;
+        const isTransient = error?.status === 500 || error?.status === 503 || String(error).includes('503') || String(error).includes('500');
+
+        if (isRateLimit || isTransient) {
+          // If 503 or 429 and we have more keys, break out of the attempts loop to rotate to the next key.
+          if (keyIndex < availableKeys.length - 1) {
+            console.warn(`[Gemini Rotation] Hit 503/429. Rotating from key index ${keyIndex} to next fallback key immediately...`);
+            break; // Break inner loop to advance outer loop to next key
+          }
+
+          // If this is the last available key and it's a daily quota, fail immediately - waiting won't help
+          if (isDailyQuotaExhausted) {
+            throw new Error(`GEMINI_QUOTA_EXHAUSTED: You exceeded your daily free tier limit for model '${model}'. Please activate a paid API key or switch to a different model in the settings.`);
+          }
+
+          if (attempt >= maxAttemptsPerKey) {
+            console.warn(`[Gemini Exceeded] Exhausted retries for the last available key.`);
+            continue;
+          }
+
+          if (isRateLimit) {
+            const baseDelay = getRetryDelay(error);
+            const backoffDelay = Math.ceil(baseDelay * Math.pow(1.3, attempt - 1) + Math.random() * 3000);
+            console.warn(`[Gemini Retry] Throttled error hit on last key. Queueing automatic retry ${attempt + 1}/${maxAttemptsPerKey} in ${Math.round(backoffDelay / 1000)} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          } else {
+            const baseDelay = 3000;
+            const backoffDelay = Math.ceil(baseDelay * Math.pow(1.5, attempt - 1) + Math.random() * 1000);
+            console.warn(`[Gemini Retry] Transient error hit on last key. Queueing automatic retry ${attempt + 1}/${maxAttemptsPerKey} in ${Math.round(backoffDelay / 1000)} seconds...`);
+            await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          }
+        } else {
+          throw error;
+        }
       }
     }
   }
 
-  throw new Error(`Failed to process screenshot using ${model} after maximum Gemini retries.`);
+  throw new Error(`Failed to process screenshot using ${model} after maximum Gemini retries. Last Error: ${String(lastError)}`);
 }

@@ -1,34 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-let otpMockStorage = new Map<string, string>();
-
-declare global {
-  var otpCache: Map<string, string> | undefined;
-}
-
-if (process.env.NODE_ENV !== 'production') {
-  otpMockStorage = global.otpCache || new Map<string, string>();
-}
+import { getFirestore, doc, getDoc, deleteDoc } from 'firebase/firestore/lite';
+import { app } from '@/lib/firebase';
+import firebaseConfig from '@/firebase-applet-config.json';
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, code } = await req.json();
+    const { email, code, uid } = await req.json();
     
-    if (!email || !code) {
-      return NextResponse.json({ error: 'Email and code are required' }, { status: 400 });
+    if (!email || !code || !uid) {
+      return NextResponse.json({ error: 'Email, code, and UID are required' }, { status: 400 });
     }
 
-    const storedCode = otpMockStorage.get(email);
-    
-    if (!storedCode || storedCode !== code) {
-      return NextResponse.json({ error: 'Invalid or expired OTP code' }, { status: 400 });
+    // Fetch the OTP document saved in Firestore
+    const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    const otpDocRef = doc(dbLite, 'otp_codes', uid);
+    const otpSnap = await getDoc(otpDocRef);
+
+    if (!otpSnap.exists()) {
+      return NextResponse.json({ error: 'Kode OTP tidak ditemukan atau silakan kirim ulang' }, { status: 400 });
     }
 
-    otpMockStorage.delete(email); // consume successfully verified code
+    const data = otpSnap.data();
+
+    // Check if OTP matches
+    if (data.code !== code) {
+      return NextResponse.json({ error: 'Kode OTP salah' }, { status: 400 });
+    }
+
+    // Check expiration
+    const expiresAt = data.expiresAt?.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
+    if (new Date() > expiresAt) {
+      await deleteDoc(otpDocRef);
+      return NextResponse.json({ error: 'Kode OTP telah kadaluarsa' }, { status: 400 });
+    }
+
+    // Consume the OTP code upon successful verification
+    await deleteDoc(otpDocRef);
 
     return NextResponse.json({ success: true, message: 'OTP verified successfully' });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Verify OTP Error:', err);
-    return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Verification failed' }, { status: 500 });
   }
 }

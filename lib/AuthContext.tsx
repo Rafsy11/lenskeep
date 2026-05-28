@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { useRouter, usePathname } from 'next/navigation';
 import {
   User,
+  UserCredential,
   onAuthStateChanged,
   signInWithPopup,
   GoogleAuthProvider,
@@ -13,17 +14,21 @@ import {
   updateProfile,
   sendEmailVerification
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore/lite';
+import { auth, app } from './firebase';
+import firebaseConfig from '@/firebase-applet-config.json';
+
+const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 interface AuthContextType {
   user: User | null;
   userProfile: any | null;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<UserCredential>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string, username?: string) => Promise<void>;
   logout: () => Promise<void>;
+  syncUserProfile: (firebaseUser: User, name?: string) => Promise<any>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,71 +37,124 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [pending, setPending] = useState<boolean>(true);
   const router = useRouter();
   const pathname = usePathname();
 
   // Synchronize dynamic user profiles on authentication transitions
   const syncUserProfile = async (firebaseUser: User, name?: string) => {
     try {
-      const userRef = doc(db, 'users', firebaseUser.uid);
-      const userSnap = await getDoc(userRef);
+      const userRef = doc(dbLite, 'users', firebaseUser.uid);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Profile sync timeout')), 6000));
+      
+      const userSnap = await Promise.race([
+        getDoc(userRef),
+        timeoutPromise
+      ]) as any;
 
       if (!userSnap.exists()) {
+        // Must wait to ensure reload is complete
+        await firebaseUser.reload().catch(() => {});
+        const isEmailVerified = firebaseUser.emailVerified || firebaseUser.providerData.some(p => p.providerId === 'google.com');
+
         const newData = {
           userId: firebaseUser.uid,
           email: firebaseUser.email || '',
           displayName: name || firebaseUser.displayName || 'Anonymous User',
-          emailVerified: firebaseUser.providerData.some(p => p.providerId === 'google.com') ? true : false,
+          emailVerified: isEmailVerified,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
-        await setDoc(userRef, newData);
+        await Promise.race([
+          setDoc(userRef, newData),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Profile create timeout')), 4000))
+        ]);
         setUserProfile(newData);
+        return newData;
       } else {
-        setUserProfile(userSnap.data());
+        const data = userSnap.data();
+        // Fallback: if data is somehow marked unverified but Firebase Auth says verified, keep it synced in session state
+        if (!data.emailVerified && firebaseUser.emailVerified) {
+          data.emailVerified = true; 
+        }
+        setUserProfile(data);
+        return data;
       }
     } catch (error) {
-      console.warn('Could not sync user profile in firestore (possibly rules/auth status is finalizing):', error);
-      setUserProfile(null);
+      console.warn('Could not sync user profile in firestore:', error);
+      // Fallback object to give them basic access
+      const fallbackData = {
+        userId: firebaseUser.uid,
+        email: firebaseUser.email || '',
+        displayName: firebaseUser.displayName || 'Anonymous',
+        emailVerified: firebaseUser.emailVerified,
+      };
+      setUserProfile(fallbackData);
+      return fallbackData;
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-        await syncUserProfile(firebaseUser);
-      } else {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setPending(true);
+      setLoading(true);
+
+      if (!currentUser) {
         setUser(null);
         setUserProfile(null);
+        setPending(false);
+        setLoading(false);
+      } else {
+        try {
+          await currentUser.reload().catch(() => {});
+          await syncUserProfile(currentUser);
+          setUser(currentUser);
+        } catch (error) {
+          console.error('Error during auth listener update:', error);
+        } finally {
+          setPending(false);
+          setLoading(false);
+        }
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Global user verification enforcement redirect
+  // Global user verification and onboarding enforcement redirect
   useEffect(() => {
-    if (loading) return; // Wait until initial auth load resolves
+    if (pending) return;
 
-    // Only assess rules if we actually have a logged-in user profile or firebase user
     if (user) {
-      // 1) Handle check for verification status (local firestore check override, then fallback to native emailVerified if applicable)
       const isVerified = userProfile?.emailVerified === true || user.emailVerified === true;
-      
-      // 2) Apply logic
-      if (!isVerified && pathname !== '/verify-email') {
-        router.push('/verify-email');
+      const hasUsername = !!userProfile?.username;
+
+      if (!isVerified) {
+        if (pathname !== '/verify-email') {
+          router.replace('/verify-email');
+        }
+      } else {
+        // Verification passed, now enforce onboarding status
+        if (!hasUsername) {
+          if (pathname !== '/onboarding') {
+            router.replace('/onboarding');
+          }
+        } else {
+          // Both verified and onboarded - redirect away from gatekeeper screens
+          if (pathname === '/onboarding' || pathname === '/verify-email' || pathname === '/login') {
+            router.replace('/');
+          }
+        }
       }
     }
-  }, [user, userProfile, loading, pathname, router]);
+  }, [user, userProfile, pending, pathname, router]);
 
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      provider.setCustomParameters({ prompt: 'select_account' });
+      return await signInWithPopup(auth, provider);
     } catch (error) {
       setLoading(false);
       throw error;
@@ -121,13 +179,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await updateProfile(userCredential.user, {
           displayName: name
         });
-        await syncUserProfile(userCredential.user, name);
+        
+        const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+        
+        // Ensure the initial profile includes the username so the user bypasses onboarding
+        await setDoc(doc(dbLite, 'users', userCredential.user.uid), {
+          userId: userCredential.user.uid,
+          email: userCredential.user.email || '',
+          displayName: name,
+          fullName: name,
+          username: username || '',
+          emailVerified: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
         if (username) {
-          await setDoc(doc(db, 'usernames', username), {
+          await setDoc(doc(dbLite, 'usernames', username), {
             uid: userCredential.user.uid,
             createdAt: serverTimestamp()
           });
         }
+        
+        await syncUserProfile(userCredential.user, name);
         
         try {
           await sendEmailVerification(userCredential.user);
@@ -151,6 +225,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Determine actual authorization to prevent rendering children during redirects
+  let isAuthorized = true;
+  if (!pending && user) {
+    const isVerified = userProfile?.emailVerified === true || user.emailVerified === true;
+    const hasUsername = !!userProfile?.username;
+
+    if (!isVerified) {
+      if (pathname !== '/verify-email') {
+        isAuthorized = false;
+      }
+    } else if (!hasUsername) {
+      if (pathname !== '/onboarding') {
+        isAuthorized = false;
+      }
+    } else {
+      if (pathname === '/onboarding' || pathname === '/verify-email') {
+        isAuthorized = false;
+      }
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -161,9 +256,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithEmail,
         signUpWithEmail,
         logout,
+        syncUserProfile,
       }}
     >
-      {children}
+      {pending || !isAuthorized ? (
+        <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="w-10 h-10 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+            <p className="font-mono text-xs text-slate-400 tracking-wider">Memuat LensKeep ...</p>
+          </div>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 }

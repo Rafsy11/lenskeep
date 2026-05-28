@@ -55,6 +55,11 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid && usernameId.matches('^[a-z0-9_]+$');
     }
 
+    // Match paths for OTP Codes (used by server-side verification pipeline)
+    match /otp_codes/{uid} {
+      allow read, write: if true;
+    }
+
     // Match nested paths for Screenshots
     match /users/{userId}/screenshots/{screenshotId} {
       allow get, list: if isOwner(userId);

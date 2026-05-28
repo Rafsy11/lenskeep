@@ -23,16 +23,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Screenshot URL is required' }, { status: 400 });
     }
 
-    const filename = url.replace('/uploads/', '');
-    const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+    let base64Image = '';
+    let mimeType = 'image/webp';
 
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: 'Image file not found on server' }, { status: 404 });
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      try {
+        const imageRes = await fetch(url);
+        if (!imageRes.ok) {
+          throw new Error(`Failed to fetch image from URL: ${imageRes.statusText}`);
+        }
+        
+        const contentType = imageRes.headers.get('content-type');
+        if (contentType) {
+          mimeType = contentType;
+        }
+        
+        const arrayBuffer = await imageRes.arrayBuffer();
+        base64Image = Buffer.from(arrayBuffer).toString('base64');
+      } catch (err: any) {
+        console.error('Error fetching external image:', err);
+        return NextResponse.json({ error: 'Failed to access the external image URL' }, { status: 400 });
+      }
+    } else {
+      const filename = url.replace('/uploads/', '');
+      const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+
+      if (!fs.existsSync(filePath)) {
+        return NextResponse.json({ error: 'Image file not found on server' }, { status: 404 });
+      }
+
+      const buffer = fs.readFileSync(filePath);
+      base64Image = buffer.toString('base64');
+      mimeType = getMimeType(filename);
     }
-
-    const buffer = fs.readFileSync(filePath);
-    const base64Image = buffer.toString('base64');
-    const mimeType = getMimeType(filename);
 
     try {
       const aiResult = await processScreenshotWithAI(base64Image, mimeType, model, language || 'id', customApiKey, customPrompt);

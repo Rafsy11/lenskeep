@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { motion } from 'motion/react';
 import { MailCheck, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { getFirestore, doc, updateDoc } from 'firebase/firestore/lite';
+import { auth, app } from '@/lib/firebase';
+import firebaseConfig from '@/firebase-applet-config.json';
 
 export default function VerifyEmailPage() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -14,9 +15,11 @@ export default function VerifyEmailPage() {
   const [resending, setResending] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
+  const [sandboxOtp, setSandboxOtp] = useState<string | null>(null);
   const { user, userProfile, loading: authLoading, logout } = useAuth();
   const router = useRouter();
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hasSentRef = useRef(false);
 
   useEffect(() => {
     // Wait until auth is fully settled
@@ -41,6 +44,39 @@ export default function VerifyEmailPage() {
       return () => clearTimeout(timer);
     }
   }, [user, userProfile, authLoading, router]);
+
+  // Automatically dispatch the first verification OTP code on load
+  useEffect(() => {
+    if (authLoading || !user || !user.email) return;
+
+    if (!hasSentRef.current) {
+      hasSentRef.current = true;
+      const sendInitialOtp = async () => {
+        setResending(true);
+        setErrorMsg('');
+        try {
+          const res = await fetch('/api/send-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user.email, uid: user.uid })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Gagal mengirim kode verifikasi awal');
+          }
+          if (data.success && data.sandbox && data.otp) {
+            setSandboxOtp(data.otp);
+          }
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Gagal mengirim kode verifikasi ke email Anda. Silakan klik tombol "Kirim Ulang Kode".');
+        } finally {
+          setResending(false);
+        }
+      };
+
+      sendInitialOtp();
+    }
+  }, [user, authLoading]);
 
   const handleChange = (index: number, e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -83,7 +119,7 @@ export default function VerifyEmailPage() {
       setErrorMsg('Masukkan 6 digit kode OTP');
       return;
     }
-    if (!user?.email) return;
+    if (!user?.email || !user?.uid) return;
 
     setLoading(true);
     setErrorMsg('');
@@ -92,13 +128,14 @@ export default function VerifyEmailPage() {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, code })
+        body: JSON.stringify({ email: user.email, code, uid: user.uid })
       });
       const data = await res.json();
 
       if (res.ok && data.success) {
-        // Update user Firestore profile successfully verified mock
-        await updateDoc(doc(db, 'users', user.uid), {
+        // Update user Firestore profile successfully verified
+        const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+        await updateDoc(doc(dbLite, 'users', user.uid), {
           emailVerified: true
         });
         
@@ -116,21 +153,31 @@ export default function VerifyEmailPage() {
   };
 
   const resendOtp = async () => {
-    if (!user?.email || resending) return;
+    if (!user?.email || !user?.uid || resending) return;
     setResending(true);
     setErrorMsg('');
+    setSandboxOtp(null);
     try {
-      await fetch('/api/auth/send-otp', {
+      const res = await fetch('/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email })
+        body: JSON.stringify({ email: user.email, uid: user.uid })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengirim ulang kode');
+      }
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
-      // Use native alert or just passive UI state (we will just show a temp alert for mockup)
-      alert('Kode OTP baru telah dikirim ke terminal server Anda.');
-    } catch (err) {
-      setErrorMsg('Gagal mengirim ulang kode');
+      
+      if (data.sandbox && data.otp) {
+        setSandboxOtp(data.otp);
+        alert('Menggunakan Mode Sandbox: Silakan lihat Kode OTP pada kolom kuning di layar.');
+      } else {
+        alert('Kode OTP baru telah dikirim ke email Anda.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Gagal mengirim ulang kode');
     } finally {
       setResending(false);
     }
@@ -192,6 +239,23 @@ export default function VerifyEmailPage() {
             <div className="text-[11px] font-semibold text-rose-700 dark:text-rose-400 leading-normal">
               {errorMsg}
             </div>
+          </div>
+        )}
+
+        {sandboxOtp && (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3.5 rounded-2xl space-y-1.5 shadow-sm">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-[11px] font-bold text-amber-800 dark:text-amber-400 leading-none">
+                [Pengujian Mode Sandbox] Email Gagal Masuk?
+              </div>
+            </div>
+            <p className="text-[11px] text-amber-700 dark:text-amber-500 font-medium leading-relaxed pl-6">
+              Resend membatasi penerimaan email di mode gratis. Untuk bypass, silakan gunakan Kode OTP berikut:{' '}
+              <span className="text-xs font-black font-mono tracking-wider bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded select-all shadow-sm border border-amber-200/50 dark:border-amber-900/10">
+                {sandboxOtp}
+              </span>
+            </p>
           </div>
         )}
 

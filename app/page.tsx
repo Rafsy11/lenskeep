@@ -256,7 +256,7 @@ const LibraryCard = memo(function LibraryCard({ s, onClick, isSelected, onToggle
   );
 });
 
-function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScreenshots }: any) {
+function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScreenshots, setShowApiKeyModal }: any) {
   const hasQuotaErrors = screenshots.some((s: any) => s.status === 'error' && (
     s.text?.toLowerCase()?.includes('quota') || 
     s.text?.toLowerCase()?.includes('exhausted') || 
@@ -289,7 +289,11 @@ function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScr
         <button
           onClick={() => {
             setSelectedModel('gemini-3.1-flash-lite');
-            alert('Switched active AI engine to Gemini 3.1 Flash Lite model! You can now resume syncing or analyzing elements.');
+            const toastContent = document.createElement('div');
+            toastContent.className = 'fixed bottom-4 right-4 bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5 text-sm font-bold';
+            toastContent.innerText = 'Switched to Gemini 3.1 Flash Lite';
+            document.body.appendChild(toastContent);
+            setTimeout(() => toastContent.remove(), 4000);
           }}
           className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 border border-transparent"
         >
@@ -298,7 +302,7 @@ function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScr
         
         <button
           onClick={() => {
-            alert('To upgrade your key to support premium models & unlimited quotas:\n\n1. Go to settings > Secrets in the top panel.\n2. Input process.env.GEMINI_API_KEY with your custom premium Billing Key.');
+            if (setShowApiKeyModal) setShowApiKeyModal(true);
           }}
           className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/50 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 shadow-sm"
         >
@@ -307,11 +311,14 @@ function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScr
         
         <button
           onClick={async () => {
-            if (confirm('Unlock and clear previous errors to re-try analyzing screenshots?')) {
-              setScreenshots((prev: any) =>
-                prev.map((s: any) => s.status === 'error' ? { ...s, status: 'pending', text: '', summary: '' } : s)
-              );
-            }
+            setScreenshots((prev: any) =>
+              prev.map((s: any) => s.status === 'error' ? { ...s, status: 'pending', text: '', summary: '' } : s)
+            );
+            const toastContent = document.createElement('div');
+            toastContent.className = 'fixed bottom-4 right-4 bg-amber-50 text-amber-600 border border-amber-200 px-4 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5 text-sm font-bold';
+            toastContent.innerText = 'Errors Reset. Ready to Retry!';
+            document.body.appendChild(toastContent);
+            setTimeout(() => toastContent.remove(), 4000);
           }}
           className="px-3.5 py-2 bg-amber-100 dark:bg-amber-950/40 hover:bg-amber-205 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95"
         >
@@ -322,7 +329,7 @@ function QuotaAlertBanner({ screenshots, selectedModel, setSelectedModel, setScr
   );
 }
 
-function ApiKeyModal({ show, onClose, apiKeys, setApiKeys, customPrompt, setCustomPrompt, t }: any) {
+function ApiKeyModal({ show, onClose, apiKeys, setApiKeys, customPrompt, setCustomPrompt, t, userId }: any) {
   if (!show) return null;
   return (
     <motion.div
@@ -429,12 +436,12 @@ function ApiKeyModal({ show, onClose, apiKeys, setApiKeys, customPrompt, setCust
             onClick={() => {
               const cleanKeys = apiKeys.map((k: string) => k.trim()).filter((k: string) => k.length > 0);
               if (cleanKeys.length > 0) {
-                localStorage.setItem('lenskeep_gemini_keys', JSON.stringify(cleanKeys));
+                localStorage.setItem(`lenskeep_gemini_keys_${userId || 'default'}`, JSON.stringify(cleanKeys));
                 // Support legacy
-                localStorage.setItem('lenskeep_gemini_key', cleanKeys[0]);
+                localStorage.setItem(`lenskeep_gemini_key_${userId || 'default'}`, cleanKeys[0]);
               } else {
-                localStorage.removeItem('lenskeep_gemini_keys');
-                localStorage.setItem('lenskeep_gemini_key', '');
+                localStorage.removeItem(`lenskeep_gemini_keys_${userId || 'default'}`);
+                localStorage.setItem(`lenskeep_gemini_key_${userId || 'default'}`, '');
               }
               setApiKeys(cleanKeys.length > 0 ? cleanKeys : ['']);
               
@@ -591,21 +598,6 @@ export default function Home() {
     const storedCustomPrompt = getStoredPreference('lenskeep_custom_prompt', '');
     const storedViewMode = getStoredPreference('lenskeep_view_mode', 'grid') as 'grid' | 'list';
 
-    let loadedKeys: string[] = [];
-    try {
-      const keysStr = localStorage.getItem('lenskeep_gemini_keys');
-      if (keysStr) {
-        const arr = JSON.parse(keysStr);
-        if (Array.isArray(arr) && arr.length > 0) loadedKeys = arr;
-      }
-    } catch {}
-    if (loadedKeys.length === 0) {
-      const storedApiKey = getStoredPreference('lenskeep_gemini_key', '');
-      if (storedApiKey) loadedKeys = [storedApiKey];
-    }
-    if (loadedKeys.length > 0) setApiKeys(loadedKeys);
-    else setApiKeys(['']);
-
     if (storedQuery) setSearchQuery(storedQuery);
     if (storedCategory) setSelectedCategory(storedCategory);
     if (storedTag) setSelectedTag(storedTag);
@@ -615,6 +607,28 @@ export default function Home() {
 
     preferencesLoaded.current = true;
   }, []);
+
+  // Isolate API Key loading to react to user UID changes
+  useEffect(() => {
+    if (authLoading) return;
+    const currentUid = user?.uid || 'default';
+    
+    let loadedKeys: string[] = [];
+    try {
+      const keysStr = localStorage.getItem(`lenskeep_gemini_keys_${currentUid}`);
+      if (keysStr) {
+        const arr = JSON.parse(keysStr);
+        if (Array.isArray(arr) && arr.length > 0) loadedKeys = arr;
+      }
+    } catch {}
+    
+    if (loadedKeys.length === 0) {
+      const storedApiKey = getStoredPreference(`lenskeep_gemini_key_${currentUid}`, '');
+      if (storedApiKey) loadedKeys = [storedApiKey];
+    }
+    
+    setApiKeys(loadedKeys.length > 0 ? loadedKeys : ['']);
+  }, [user?.uid, authLoading]);
 
   // Persist search, category, tag, and filter toggle choices to localStorage on modifications
   useEffect(() => {
@@ -800,7 +814,7 @@ export default function Home() {
   const checkApiKeyGuard = () => {
     let hasKey = false;
     try {
-      const keysStr = localStorage.getItem('lenskeep_gemini_keys');
+      const keysStr = localStorage.getItem(`lenskeep_gemini_keys_${user?.uid || 'default'}`);
       if (keysStr) {
         const arr = JSON.parse(keysStr);
         if (Array.isArray(arr) && arr.length > 0 && arr.some(k => k.trim())) {
@@ -809,7 +823,7 @@ export default function Home() {
       }
     } catch {}
     if (!hasKey) {
-      const legacyKey = getStoredPreference('lenskeep_gemini_key', '');
+      const legacyKey = getStoredPreference(`lenskeep_gemini_key_${user?.uid || 'default'}`, '');
       if (legacyKey.trim()) hasKey = true;
     }
 
@@ -824,7 +838,7 @@ export default function Home() {
   const executeWithKeyRotationAndRetry = async (url: string, model: string): Promise<any> => {
     const getKeys = (): string[] => {
       try {
-        const keysStr = localStorage.getItem('lenskeep_gemini_keys');
+        const keysStr = localStorage.getItem(`lenskeep_gemini_keys_${user?.uid || 'default'}`);
         if (keysStr) {
           const arr = JSON.parse(keysStr);
           if (Array.isArray(arr) && arr.length > 0) {
@@ -832,7 +846,7 @@ export default function Home() {
             if (validKeys.length > 0) return validKeys;
           }
         }
-        const legacyKey = localStorage.getItem('lenskeep_gemini_key');
+        const legacyKey = localStorage.getItem(`lenskeep_gemini_key_${user?.uid || 'default'}`);
         if (legacyKey) return [legacyKey];
       } catch {}
       return [];
@@ -857,26 +871,23 @@ export default function Home() {
         const data = await res.json();
         
         if (!res.ok) {
-          const errText = String(data.error || '').toLowerCase();
-          const needsRotation = res.status === 429 || errText.includes('quota') || errText.includes('exhausted') || errText.includes('429') || errText.includes('too many requests');
-          
-          if (needsRotation && attempt < keys.length - 1) {
-            continue; // Retry with next key in array
-          }
+          console.warn(`Key attempt ${attempt + 1} failed:`, data.error);
+          continue;
         }
         
         if (attempt > 0) {
            const newKeys = [...keys.slice(attempt), ...keys.slice(0, attempt)];
-           localStorage.setItem('lenskeep_gemini_keys', JSON.stringify(newKeys));
+           localStorage.setItem(`lenskeep_gemini_keys_${user?.uid || 'default'}`, JSON.stringify(newKeys));
         }
 
-        return { res, data }; // Success or other error (or single key fail)
+        return { res, data }; // Success
       } catch (err) {
-        throw err; // Network failure or proxy 500 error; abort iterating keys immediately to prevent burn
+        console.warn(`Key attempt ${attempt + 1} threw error:`, err);
+        continue;
       }
     }
 
-    throw new Error('ALL_KEYS_EXHAUSTED');
+    return { res: { ok: false }, data: { success: false, error: 'All keys exhausted' } };
   };
 
   // Handle Drag Events
@@ -1011,8 +1022,12 @@ export default function Home() {
     }
   };
 
-  // Core concurrently managed upload runner (concurrency level: 3)
   const uploadMultipleFiles = async (files: File[]) => {
+    if (files.length > 30) {
+      alert('Maksimal 30 foto dalam satu kali unggah');
+      return;
+    }
+
     setUploading(true);
     
     const initialQueue: QueueItem[] = files.map((file, idx) => ({
@@ -1030,12 +1045,11 @@ export default function Home() {
       errors: 0,
     });
 
-    const activeUploadsLimit = 3;
-    let index = 0;
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    const runUpload = async (queueItemIndex: number): Promise<void> => {
-      const file = files[queueItemIndex];
-      const queueId = initialQueue[queueItemIndex].id;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const queueId = initialQueue[i].id;
 
       let fileToUpload = file;
       try {
@@ -1063,15 +1077,7 @@ export default function Home() {
           )
         );
         setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
-        
-        const nextIndex = queueItemIndex + 1;
-        if (nextIndex < files.length) {
-          runUpload(nextIndex);
-        } else {
-          setUploading(false);
-          await fetchScreenshots();
-        }
-        return;
+        continue;
       }
 
       setUploadQueue(prev =>
@@ -1107,11 +1113,11 @@ export default function Home() {
           if (res.ok && data.success) {
             ocrResult = data.result || {};
           } else {
-             console.error("Gemini analysis failed:", data);
+             console.warn("Gemini analysis failed:", data);
              finalStatus = 'error';
           }
         } catch (e) {
-          console.error("Gemini request threw error:", e);
+          console.warn("Gemini request threw error:", e);
           finalStatus = 'error';
         }
 
@@ -1162,22 +1168,14 @@ export default function Home() {
         );
         setQueueSummary(prev => ({ ...prev, errors: prev.errors + 1 }));
       }
-    };
 
-    const workers: Promise<void>[] = [];
-    const runNext = async (): Promise<void> => {
-      if (index >= files.length) return;
-      const currentIndex = index++;
-      await runUpload(currentIndex);
-      await runNext();
-    };
-
-    for (let w = 0; w < Math.min(activeUploadsLimit, files.length); w++) {
-      workers.push(runNext());
+      if (i < files.length - 1) {
+        await sleep(3000);
+      }
     }
 
-    await Promise.all(workers);
     setUploading(false);
+    await fetchScreenshots();
   };
 
   // Sync Library - processes all pending/error screenshots sequentially with Gemini API
@@ -1692,7 +1690,8 @@ export default function Home() {
           setApiKeys={setApiKeys}
           customPrompt={customPrompt}
           setCustomPrompt={setCustomPrompt} 
-          t={t} 
+          t={t}
+          userId={user?.uid}
         />
 
         {/* Gemini Quota Alert Banner */}
@@ -1701,6 +1700,7 @@ export default function Home() {
           selectedModel={selectedModel} 
           setSelectedModel={setSelectedModel} 
           setScreenshots={setScreenshots} 
+          setShowApiKeyModal={setShowApiKeyModal}
         />
 
         {/* Sleek toggleable/collapsible Upload panel wrapper */}

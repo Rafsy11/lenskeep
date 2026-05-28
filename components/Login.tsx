@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, LogIn, Sparkles, Loader2, AlertCircle, ArrowRight, Eye, EyeOff, Check, X, AtSign } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getFirestore, doc, getDoc } from 'firebase/firestore/lite';
+import { app } from '@/lib/firebase';
+import firebaseConfig from '@/firebase-applet-config.json';
 
 export default function Login() {
   const { loginWithGoogle, loginWithEmail, signUpWithEmail } = useAuth();
@@ -66,16 +67,30 @@ export default function Login() {
     setIsUsernameChecking(true);
     const timer = setTimeout(async () => {
       try {
-        const docRef = doc(db, 'usernames', username);
-        const docSnap = await getDoc(docRef);
+        const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+        const docRef = doc(dbLite, 'usernames', username);
+        // Add a timeout to prevent infinite spinner if Firebase SDK hangs
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 5000)
+        );
+        const docSnap = await Promise.race([
+          getDoc(docRef),
+          timeoutPromise
+        ]) as any;
+        
         if (docSnap.exists()) {
           setUsernameError('Username sudah dipakai.');
         } else {
           setUsernameSuccess('Username tersedia.');
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error('Username check failed', e);
-        setUsernameError('Gagal memeriksa username.');
+        if (e?.message && String(e.message).toLowerCase().includes('offline')) {
+          setUsernameSuccess('Status koneksi: offline. Validasi saat mendaftar.');
+          setUsernameError('');
+        } else {
+          setUsernameError('Gagal memeriksa username.');
+        }
       } finally {
         setIsUsernameChecking(false);
       }
@@ -159,6 +174,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       await loginWithGoogle();
+      // Routing is now handled entirely within AuthContext globally.
     } catch (err: any) {
       console.error('Google provider authentication failed:', err);
       setErrorMsg(err?.message || 'Gagal masuk dengan Google.');
