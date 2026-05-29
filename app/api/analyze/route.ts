@@ -12,8 +12,29 @@ function getMimeType(filename: string): string {
   return 'image/png';
 }
 
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const rateLimitMap = new Map<string, { count: number, lastReset: number }>();
+
 export async function POST(req: NextRequest) {
   try {
+    const ip = req.headers.get('x-forwarded-for') || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitMap.get(ip);
+
+    if (!entry) {
+      rateLimitMap.set(ip, { count: 1, lastReset: now });
+    } else if (now - entry.lastReset > RATE_LIMIT_WINDOW_MS) {
+      rateLimitMap.set(ip, { count: 1, lastReset: now });
+    } else if (entry.count >= RATE_LIMIT_MAX) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a minute.' },
+        { status: 429 }
+      );
+    } else {
+      entry.count++;
+    }
+
     const { url, model, language, customPrompt } = await req.json();
 
     const authHeader = req.headers.get('Authorization');

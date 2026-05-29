@@ -5,6 +5,7 @@ import imageCompression from 'browser-image-compression';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'motion/react';
+import toast from 'react-hot-toast';
 import {
   Search,
   Upload,
@@ -647,6 +648,7 @@ export default function Home() {
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [copiedText, setCopiedText] = useState<boolean>(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [isUploadCollapsed, setIsUploadCollapsed] = useState<boolean>(true);
   const [hasSetInitialCollapse, setHasSetInitialCollapse] = useState<boolean>(false);
   const [showFilters, setShowFilters] = useState<boolean>(false);
@@ -1360,11 +1362,13 @@ export default function Home() {
     if (!user) return;
     if (!checkApiKeyGuard()) return;
 
+    setIsLoading(true);
     setAnalyzingId(id);
 
     const targetScreenshot = screenshots.find(s => s.id === id);
     if (!targetScreenshot) {
       setAnalyzingId(null);
+      setIsLoading(false);
       return;
     }
 
@@ -1385,6 +1389,8 @@ export default function Home() {
           status: 'completed',
           updatedAt: serverTimestamp(),
         });
+        toast.success('Analisis selesai!');
+        setSelectedScreenshot(null);
       } else {
         const errorMsg = data.error || 'Analysis failed';
         await updateDoc(doc(db, 'users', user.uid, 'screenshots', id), {
@@ -1400,9 +1406,10 @@ export default function Home() {
         }
       }
     } catch (err) {
-      console.error('Manual analyze connection error:', err);
+      toast.error(err instanceof Error ? err.message : 'Gagal memproses data!');
     } finally {
       setAnalyzingId(null);
+      setIsLoading(false);
     }
   };
 
@@ -2466,13 +2473,13 @@ export default function Home() {
                       {selectedScreenshot.status !== 'processing' ? (
                         <button
                           onClick={() => runManualAnalysis(selectedScreenshot.id)}
-                          disabled={analyzingId === selectedScreenshot.id}
+                          disabled={isLoading}
                           className="w-full mt-1 flex items-center justify-center space-x-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer active:scale-[0.98] disabled:opacity-50 transition-all shadow-md shadow-indigo-600/10"
                         >
-                          {analyzingId === selectedScreenshot.id ? (
+                          {isLoading ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Analysing components...</span>
+                              <span>Sedang Menganalisis... ⏳</span>
                             </>
                           ) : (
                             <>

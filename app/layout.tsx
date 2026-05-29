@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/lib/AuthContext'
 import { LanguageProvider } from '@/lib/LanguageContext'
+import { Toaster } from 'react-hot-toast'
 import './globals.css'
 
 const inter = Inter({
@@ -32,6 +33,7 @@ export default function RootLayout({
         <AuthProvider>
           <LanguageProvider>
             {children}
+            <Toaster position="bottom-center" />
           </LanguageProvider>
         </AuthProvider>
       </body>
