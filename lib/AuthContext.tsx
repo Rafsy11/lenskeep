@@ -19,6 +19,8 @@ import { auth, app, firebaseConfig } from './firebase';
 
 const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
+let isSigningUp = false;
+
 interface AuthContextType {
   user: User | null;
   userProfile: any | null;
@@ -65,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           updatedAt: serverTimestamp(),
         };
         await Promise.race([
-          setDoc(userRef, newData),
+          setDoc(userRef, newData, { merge: true }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Profile create timeout')), 4000))
         ]);
         setUserProfile(newData);
@@ -95,6 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (isSigningUp) return;
+
       setPending(true);
       setLoading(true);
 
@@ -172,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUpWithEmail = async (email: string, password: string, name: string, username?: string) => {
     setLoading(true);
+    isSigningUp = true;
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       if (userCredential.user) {
@@ -191,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           emailVerified: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
-        });
+        }, { merge: true });
 
         if (username) {
           await setDoc(doc(dbLite, 'usernames', username), {
@@ -211,6 +216,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       setLoading(false);
       throw error;
+    } finally {
+      isSigningUp = false;
     }
   };
 
