@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore/lite';
-import { app } from '@/lib/firebase';
-import firebaseConfig from '@/firebase-applet-config.json';
+import { app, firebaseConfig } from '@/lib/firebase';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;

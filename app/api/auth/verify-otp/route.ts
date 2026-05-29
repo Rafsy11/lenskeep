@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore, doc, getDoc, deleteDoc } from 'firebase/firestore/lite';
-import { app } from '@/lib/firebase';
-import firebaseConfig from '@/firebase-applet-config.json';
+import { app, firebaseConfig } from '@/lib/firebase';
 
 export async function POST(req: NextRequest) {
   try {

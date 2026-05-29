@@ -15,8 +15,7 @@ import {
   sendEmailVerification
 } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore/lite';
-import { auth, app } from './firebase';
-import firebaseConfig from '@/firebase-applet-config.json';
+import { auth, app, firebaseConfig } from './firebase';
 
 const dbLite = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 

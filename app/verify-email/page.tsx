@@ -6,8 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { motion } from 'motion/react';
 import { MailCheck, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
 import { getFirestore, doc, updateDoc } from 'firebase/firestore/lite';
-import { auth, app } from '@/lib/firebase';
-import firebaseConfig from '@/firebase-applet-config.json';
+import { auth, app, firebaseConfig } from '@/lib/firebase';
 
 export default function VerifyEmailPage() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']);

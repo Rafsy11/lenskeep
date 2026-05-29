@@ -7,8 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, User, LogIn, Sparkles, Loader2, AlertCircle, ArrowRight, Eye, EyeOff, Check, X, AtSign } from 'lucide-react';
 import { getFirestore, doc, getDoc } from 'firebase/firestore/lite';
-import { app } from '@/lib/firebase';
-import firebaseConfig from '@/firebase-applet-config.json';
+import { app, firebaseConfig } from '@/lib/firebase';
 
 export default function Login() {
   const { loginWithGoogle, loginWithEmail, signUpWithEmail } = useAuth();
